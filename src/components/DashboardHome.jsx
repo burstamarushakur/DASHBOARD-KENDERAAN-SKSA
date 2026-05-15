@@ -1,6 +1,93 @@
 import { useState, useEffect } from 'react';
-import { Users, Car, UserCheck, Shield, Clock, School } from 'lucide-react';
+import { Users, Car, UserCheck, Shield, Clock, School, LogIn, AlertCircle } from 'lucide-react';
 import { apiCall } from '../lib/api';
+
+function getTodayKey() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function normalizeDateKey(value) {
+  const str = String(value || '').trim();
+
+  if (!str) return '';
+
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slashMatch) {
+    const dd = slashMatch[1].padStart(2, '0');
+    const mm = slashMatch[2].padStart(2, '0');
+    const yyyy = slashMatch[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return str;
+}
+
+function VisitorCard({ visitor, active = false }) {
+  return (
+    <div className={`rounded-xl border p-4 ${
+      active
+        ? 'bg-emerald-500/10 border-emerald-500/20'
+        : 'bg-slate-950/60 border-slate-800'
+    }`}>
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="font-mono text-xl font-black text-cyan-400 tracking-tight">
+              {visitor.no_kenderaan || '-'}
+            </span>
+
+            <span className={`px-2 py-1 rounded-md text-[10px] font-bold border ${
+              String(visitor.status || '').toUpperCase() === 'MASUK'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}>
+              {visitor.status || '-'}
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-100">
+              {visitor.nama_pelawat || '-'}
+            </p>
+
+            <p className="text-xs text-slate-400">
+              Tujuan: <span className="text-slate-200">{visitor.tujuan || '-'}</span>
+            </p>
+
+            <p className="text-xs text-slate-400">
+              Jumpa: <span className="text-slate-200">{visitor.jumpa_siapa || '-'}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="lg:text-right shrink-0">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+            Masa Masuk
+          </p>
+          <p className="text-sm font-bold text-slate-200">
+            {visitor.masa_masuk || '-'}
+          </p>
+
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-2">
+            Masa Keluar
+          </p>
+          <p className={`text-sm font-bold ${visitor.masa_keluar ? 'text-slate-200' : 'text-emerald-400'}`}>
+            {visitor.masa_keluar || 'MASIH DI KAWASAN'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardHome() {
   const [stats, setStats] = useState({
@@ -12,7 +99,9 @@ export default function DashboardHome() {
     visitorActive: 0
   });
 
+  const [visitors, setVisitors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingVisitors, setLoadingVisitors] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -42,12 +131,48 @@ export default function DashboardHome() {
       }
     };
 
+    const fetchVisitors = async () => {
+      setLoadingVisitors(true);
+
+      try {
+        const resp = await apiCall('listVisitors', {});
+
+        if (mounted && resp.success) {
+          setVisitors(Array.isArray(resp.data) ? resp.data : []);
+        } else {
+          setVisitors([]);
+        }
+      } catch (err) {
+        console.error('Fetch visitors error:', err);
+        setVisitors([]);
+      } finally {
+        if (mounted) {
+          setLoadingVisitors(false);
+        }
+      }
+    };
+
     fetchDashboard();
+    fetchVisitors();
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  const todayKey = getTodayKey();
+
+  const visitorsToday = visitors.filter((visitor) => {
+    const dateKey = normalizeDateKey(visitor.tarikh || visitor.timestamp_masuk);
+    return dateKey === todayKey;
+  });
+
+  const activeVisitors = visitors.filter((visitor) => {
+    const status = String(visitor.status || '').toUpperCase().trim();
+    const masaKeluar = String(visitor.masa_keluar || '').trim();
+
+    return status === 'MASUK' || (!masaKeluar && status !== 'KELUAR');
+  });
 
   const cards = [
     {
@@ -155,22 +280,107 @@ export default function DashboardHome() {
         })}
       </div>
 
-      <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h4 className="text-sm font-semibold text-slate-100">
-              Status Sistem
-            </h4>
-            <p className="text-xs text-slate-400 mt-1">
-              Sistem sedang berhubung dengan Google Apps Script dan Google Sheet melalui Vercel API Proxy.
-            </p>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="bg-slate-900/40 border border-cyan-500/20 rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-slate-800 bg-cyan-500/5 flex items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <LogIn className="w-5 h-5 text-cyan-400" />
+                <h4 className="text-base font-bold text-cyan-400">
+                  Pelawat Hari Ini
+                </h4>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Senarai kenderaan pelawat yang direkodkan pada hari ini.
+              </p>
+            </div>
+
+            <div className="text-right">
+              <p className="text-4xl font-black text-cyan-400">
+                {loadingVisitors ? '...' : visitorsToday.length}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+                Rekod Hari Ini
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 w-fit">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"></div>
-            <span className="text-xs font-medium text-emerald-400">
-              Berhubung ke GAS
-            </span>
+          <div className="p-5 space-y-3 max-h-[420px] overflow-y-auto">
+            {loadingVisitors ? (
+              <div className="flex items-center justify-center py-12 text-slate-500">
+                <div className="w-5 h-5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                Memuatkan data pelawat...
+              </div>
+            ) : visitorsToday.length > 0 ? (
+              visitorsToday.slice(0, 8).map((visitor) => (
+                <VisitorCard
+                  key={visitor.id || `${visitor.no_kenderaan}-${visitor.masa_masuk}`}
+                  visitor={visitor}
+                />
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <AlertCircle className="w-8 h-8 text-slate-600 mb-3" />
+                <p className="text-sm font-medium text-slate-400">
+                  Tiada rekod pelawat hari ini.
+                </p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Data akan dipaparkan selepas borang pelawat diisi.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-slate-900/40 border border-emerald-500/20 rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-slate-800 bg-emerald-500/5 flex items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                <h4 className="text-base font-bold text-emerald-400">
+                  Pelawat Aktif / Masih Di Kawasan
+                </h4>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Kenderaan pelawat yang masih belum direkodkan keluar.
+              </p>
+            </div>
+
+            <div className="text-right">
+              <p className="text-4xl font-black text-emerald-400">
+                {loadingVisitors ? '...' : activeVisitors.length}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+                Masih Aktif
+              </p>
+            </div>
+          </div>
+
+          <div className="p-5 space-y-3 max-h-[420px] overflow-y-auto">
+            {loadingVisitors ? (
+              <div className="flex items-center justify-center py-12 text-slate-500">
+                <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                Memuatkan data pelawat aktif...
+              </div>
+            ) : activeVisitors.length > 0 ? (
+              activeVisitors.slice(0, 8).map((visitor) => (
+                <VisitorCard
+                  key={visitor.id || `${visitor.no_kenderaan}-${visitor.masa_masuk}`}
+                  visitor={visitor}
+                  active
+                />
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <AlertCircle className="w-8 h-8 text-slate-600 mb-3" />
+                <p className="text-sm font-medium text-slate-400">
+                  Tiada pelawat aktif.
+                </p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Semua pelawat telah direkodkan keluar atau belum ada pelawat masuk.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
